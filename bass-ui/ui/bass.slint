@@ -1,0 +1,510 @@
+import { ListView, Button, ScrollView } from "std-widgets.slint";
+import { Music } from "./types.slint";
+import { KeywordList, ExitButton} from "./common.slint";
+
+import { KeywordInput, KeywordInputLogic } from "keyword-input.slint";
+
+import { AddDialog } from "./add-item.slint";
+import { DetailedView } from "detailed-view.slint";
+
+export { AddDialog }
+export { KeywordInputLogic }
+
+
+component ItemCell inherits Rectangle {
+    in property<string> text;
+    in property<color> text-color;
+
+    body := Text {
+        width: parent.width;
+        text: parent.text;
+        color: parent.text-color;
+        horizontal-alignment: left;
+        overflow: elide;
+    }
+}
+
+component ItemSeparator inherits Rectangle {
+    buffer := Rectangle {
+        width: 0.2rem;
+    }
+    vr := Rectangle {
+        background: #888;
+        width: 1px;
+        x: buffer.width;
+    }
+    buffer2 := Rectangle {
+        x: buffer.width + vr.width;
+        width: 0.2rem;
+    }
+
+    width: buffer.width + vr.width + buffer.width;
+}
+
+component MusicItem inherits Rectangle {
+    in property<Music> music;
+    in property<bool> selected;
+
+    in property<length> title-width;
+    in property<length> source-width;
+    in property<length> composer-width;
+    in property<length> arranger-width;
+    in property<length> keywords-width;
+
+    callback click-handler(int);
+
+    in property<bool> insert-separator;
+    in property<length> separator-size: 1px;
+
+    out property<bool> is-hovered: listing.has-hover || self.selected;
+
+    background: is-hovered ? #9AC : #EEE;
+    animate background {
+        duration: 100ms;
+        easing: ease-in-out-sine;
+    }
+
+    if insert-separator: Rectangle {
+        height: separator-size; 
+        width: parent.width;
+        x: 0;
+        y: 0;
+        background: #BBB;
+    }
+
+    property<color> text-color: is-hovered ? #000 : #222;
+    HorizontalLayout {
+        // y: insert-separator ? separator-size : 0px;
+        // padding: 0.2rem;
+        // spacing: 0.2rem;
+        height: 1.6rem;
+        listing := TouchArea {
+            clicked => {
+                click-handler(root.music.id);
+            }
+            HorizontalLayout {
+                Rectangle {
+                    // padding
+                    width: 0.2rem;
+                }
+
+                ItemCell {
+                    // This random 1px seems to correct spacing well enough. I don't know why.
+                    width: title-width + 1px;
+                    height: parent.height;
+                    text: music.title;
+                    text-color: root.text-color;
+                }
+                ItemSeparator {
+                }
+                ItemCell {
+                    width: source-width;
+                    height: parent.height;
+                    text: music.source;
+                    text-color: root.text-color;
+                }
+                ItemSeparator {
+                }
+                ItemCell {
+                    width: composer-width;
+                    height: parent.height;
+                    text: music.composer;
+                    text-color: root.text-color;
+                }
+                ItemSeparator {
+                }
+                ItemCell {
+                    width: arranger-width;
+                    height: parent.height;
+                    text: music.arranger;
+                    text-color: root.text-color;
+                }
+                ItemSeparator {
+                }
+            }
+        }
+        KeywordList {
+            y: 0.2rem;
+            width: keywords-width;
+            words: music.keywords;
+        }
+        ItemSeparator {
+        }
+    }
+}
+
+component HeaderSeparator inherits Rectangle {
+    callback dragged(length);
+
+    buffer := Rectangle {
+        width: 0.2rem;
+    }
+    vr := Rectangle {
+        background: #222;
+        x: buffer.width;
+        width: 1px;
+    }
+    buffer2 := Rectangle {
+        x: buffer.width + vr.width;
+        width: 0.2rem;
+    }
+
+    width: buffer.width + vr.width + buffer.width;
+
+    TouchArea {
+        mouse-cursor: col-resize;
+        moved() => {
+            dragged(self.mouse-x);
+        }
+    }
+}
+
+component HeaderItem inherits Rectangle {
+    in-out property<length> size;
+    in property<string> text;
+
+    body := Text {
+        text: root.text;
+        font-size: 1.3rem;
+        width: root.size;
+        height: parent.height;
+        vertical-alignment: center;
+        horizontal-alignment: center;
+        color: black;
+    }
+    sep := HeaderSeparator {
+        x: body.x + body.width; 
+        dragged(dx) => {
+            if (root.size + dx > 1rem) {
+                root.size += dx;
+            }
+        }
+    }
+    width: body.width + sep.width;
+}
+component MusicListHeader inherits Rectangle {
+    in-out property<length> title-width;
+    in-out property<length> source-width;
+    in-out property<length> composer-width;
+    in-out property<length> arranger-width;
+    in-out property<length> keywords-width;
+
+    clip: true;
+    
+    background: #AAA;
+    HorizontalLayout {
+        height: 2rem;
+        Rectangle {
+            // padding
+            width: 0.2rem;
+        }
+        HeaderItem {
+            text: "Title";
+            size <=> title-width;
+        }
+        HeaderItem {
+            text: "Source";
+            size <=> source-width;
+        }
+        HeaderItem {
+            text: "Composer";
+            size <=> composer-width;
+        }
+        HeaderItem {
+            text: "Arranger";
+            size <=> arranger-width;
+        }
+        HeaderItem {
+            text: "Keywords";
+            size <=> keywords-width;
+        }
+    }
+
+}
+
+component MusicList inherits ListView {
+    in-out property<int> selected-item: -1;
+    in property<[Music]> music;
+
+    in-out property<length> title-width;
+    in-out property<length> source-width;
+    in-out property<length> composer-width;
+    in-out property<length> arranger-width;
+    in-out property<length> keywords-width;
+
+    horizontal-scrollbar-policy: always-off;
+    // Disable horizontal scrolling
+    scrolled() => {
+        self.viewport-x = 0px;
+    }
+
+    for piece[i] in music: MusicItem {
+        music: piece;
+        selected: root.selected-item == i;
+        click-handler(id) => {
+            root.selected-item = i;
+        }
+
+        width: parent.width + 2px;
+        // x: parent.x;
+        title-width <=> root.title-width;
+        source-width <=> root.source-width;
+        composer-width <=> root.composer-width;
+        arranger-width <=> root.arranger-width;
+        keywords-width <=> root.keywords-width;
+        insert-separator: i > 0;
+    }
+
+}
+
+component MusicListContainer inherits Rectangle {
+    in property<[Music]> music;
+    in-out property<int> selected-id <=> list.selected-item;
+
+    in-out property<length> title-width: 8rem;
+    in-out property<length> source-width: 8rem;
+    in-out property<length> composer-width: 8rem;
+    in-out property<length> arranger-width: 8rem;
+    in-out property<length> keywords-width: 15rem;
+
+    callback show-add-dialog;
+
+    header := MusicListHeader {
+        y: 0;
+        height: 2rem;
+        title-width <=> root.title-width;
+        source-width <=> root.source-width;
+        composer-width <=> root.composer-width;
+        arranger-width <=> root.arranger-width;
+        keywords-width <=> root.keywords-width;
+    }
+
+    list := MusicList {
+        y: header.height - 1px;
+        height: parent.height - header.height;
+        music <=> root.music;
+        title-width <=> root.title-width;
+        source-width <=> root.source-width;
+        composer-width <=> root.composer-width;
+        arranger-width <=> root.arranger-width;
+        keywords-width <=> root.keywords-width;
+    }
+
+    // // This seems to cause the dialog to unpredictably hang, while button doesn't. For some reason.
+    // Rectangle {
+    //     accessible-role: button;
+    //     width: 3rem;
+    //     height: 3rem;
+    //     x: parent.width - (3rem + 1rem);
+    //     y: parent.height - (3rem + 1rem);
+    //     border-radius: 0.5rem;
+    //     background: #777;
+    // 
+    // 
+    //     Path {
+    //         viewbox-width: 2;
+    //         viewbox-height: 2;
+    //         viewbox-x: -1;
+    //         viewbox-y: -1;
+    //         stroke-width: 0.2rem;
+    //         stroke: #EEE;
+    // 
+    //         MoveTo{x: 0; y: 0.5;}
+    //         LineTo{x: 0; y: -0.5;}
+    //         MoveTo{x: -0.5; y: 0;}
+    //         LineTo{x: 0.5; y: 0;}
+    //     }
+    // 
+    //     TouchArea {
+    //         clicked => {
+    //             show-add-dialog();
+    //         }
+    //     }
+    // }
+    Button {
+        width: 3rem;
+        height: 3rem;
+        x: parent.width - (3rem + 1rem);
+        y: parent.height - (3rem + 1rem);
+        text: "Add";
+    
+        clicked => {
+            show-add-dialog();
+        }
+    }
+}
+
+
+component SearchList inherits Rectangle {
+    
+}
+
+component SearchBar inherits Rectangle {
+    in-out property<length> display-width;
+    in property<length> max-display-width;
+    in-out property<bool> showing: true;
+
+    width: showing ? min(max-display-width, max(display-width, 12rem)) : 0;
+
+    Rectangle {
+        SearchList {
+            x: 0;
+            y: 0;
+            height: parent.height * 50%;
+            // background: pink;
+        }
+        
+        SearchList {
+            x: 0;
+            y: 50% * parent.height;
+            height: parent.height * 50%;
+            // background: cornflowerblue;
+        }
+        
+        Rectangle {
+            y: parent.height * 50% - 0.75px;
+            height: 1.5px;
+            border-radius: 0.75px;
+            
+            width: 90% * root.width;
+            // background: #555;
+            background: #aaa;
+        }
+    }
+
+    Rectangle {
+        border-top-right-radius: 0.5rem;
+        y: root.height - 2rem;
+        x: root.width;
+        z: 255;
+        height: 2rem;
+        width: 2rem;
+        background: #777;
+        TouchArea {
+            clicked() => {
+                display-width = 0px;
+                showing = !showing;
+            }
+        }
+        Path {
+            width: parent.width;
+            height: parent.height;
+            stroke: #EEE;
+            stroke-width: 2px;
+            viewbox-width: 2;
+            viewbox-height: 2;
+            viewbox-x: -1;
+            viewbox-y: -1;
+
+            MoveTo {x: root.showing ? 0.25 : -0.25; y: -0.5;}
+            LineTo {x: root.showing ? -0.25 : 0.25; y: 0;}
+            LineTo {x: root.showing ? 0.25 : -0.25; y: 0.5;}
+        }
+    }
+
+    Rectangle {
+        x: root.width + -0.2rem - 2px;
+        width: 0.4rem + 5px;
+        HorizontalLayout {
+
+            Rectangle {
+                width: 0.2rem;
+                height: sep.height;
+            }
+
+            sep := Rectangle {
+                y: 0;
+                height: parent.height;
+                width: 2px;
+                border-width: 1px;
+                border-color: #555;
+                background: #444;
+
+            }
+            
+            Rectangle {
+                width: 0.2rem;
+                height: sep.height;
+            }
+            
+        }
+        TouchArea {
+            mouse-cursor: col-resize;
+            moved() => {
+                if (root.display-width + self.mouse-x > 12rem) {
+                    root.display-width += self.mouse-x;
+                }
+            }
+        }
+    }
+}
+
+export component Bass inherits Window {
+    // in-out property<int> selected-id <=> list.selected-id;
+    out property<Music> selection;
+    in property<length> detailed-view-size: 15rem;
+    in property<length> search-bar-size: 12rem;
+
+    min-width: 62rem;
+
+    default-font-size: 16px;
+    title: "Bass Music Organizer";
+    icon: @image-url("./images/bass-db-icon-small.png");
+
+    // This doesn't appear necessary anymore? Literally all of the data is contained in the model
+    // callback update-selection(int) -> Music;
+
+    callback show-add-dialog <=> list.show-add-dialog;
+    callback trigger-refresh;
+    callback update-entry(Music);
+    callback remove-entry(Music);
+    callback remove-keyword(Music, int, string);
+    callback add-keyword(Music, string);
+
+    property<[string]> keys;
+
+    in property<[Music]> music-list;
+    HorizontalLayout {
+
+        search-bar := SearchBar {
+            display-width: search-bar-size;
+            max-display-width: 80% * root.width;
+        }
+        
+        VerticalLayout {
+            list := MusicListContainer {
+                music: music-list;
+                changed selected-id => {
+                    root.selection = music-list[self.selected-id];
+                }
+            }
+
+            if list.selected-id >= 0: DetailedView {
+                // Text {text: list.selected-id;}
+                selection: root.selection;
+                display-height: detailed-view-size;
+                max-display-height: 70% * root.height;
+                min-display-height: 15rem;
+                close => {
+                    list.selected-id = -1;
+                }
+                update(music) => {
+                    update-entry(music);
+                    trigger-refresh();
+                }
+                remove-keyword(music, idx, word) =>  {
+                    root.remove-keyword(music, idx, word);
+                    trigger-refresh();
+                }
+                add-keyword(music, word) => {
+                    root.add-keyword(music, word);
+                    trigger-refresh();
+                }
+                delete(music) => {
+                    remove-entry(music);
+                    trigger-refresh();
+                }
+            }
+        }
+    }
+}

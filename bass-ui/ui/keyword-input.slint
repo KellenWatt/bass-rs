@@ -1,0 +1,61 @@
+import { LineEdit } from "std-widgets.slint";
+
+export global KeywordInputLogic {
+    pure callback words(hint: string) -> [string];
+}
+
+
+export component KeywordInput inherits Rectangle {
+
+    in property<int> visible-items: 8;
+    property<length> item-height: 1.5rem;
+    out property<string> text: input.text;
+
+    property<[string]> words: KeywordInputLogic.words(input.text);
+
+    callback selected();
+    callback key-pressed <=> input.key-pressed;
+    
+    public function clear() {
+        input.text = "";
+    }
+
+    height: input.height;
+
+    input := LineEdit {
+        width: parent.width;
+        accepted => {
+            root.text = self.text;
+            selected();
+            self.text = "";
+        }
+    }
+
+
+    if !input.text.is-empty: VerticalLayout {
+        x: input.x;
+        y: input.y - self.height;
+        width: input.width;
+        height: min(visible-items, words.length) * item-height;
+        for word in root.words: Rectangle {
+            background: area.has-hover ? #9AC : #EEE;
+            height: item-height;
+            Text {
+                y: 0.25rem;
+                x: 1rem;
+                overflow: elide;
+                vertical-alignment: center;
+                text: word;
+                color: black;
+            }
+            
+            area := TouchArea {
+                clicked => {
+                    root.text = word;
+                    input.text = "";
+                    selected();
+                }
+            }
+        }
+    }
+}

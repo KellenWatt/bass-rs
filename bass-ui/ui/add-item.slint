@@ -1,0 +1,222 @@
+import { Music } from "./types.slint";
+import { ListView, Button, StandardButton, LineEdit, TextEdit, ScrollView } from "std-widgets.slint";
+import { KeywordList, ErrorPopup } from "./common.slint";
+import { KeywordInput } from "keyword-input.slint";
+
+
+component FormField inherits Rectangle {
+    in property<length> label-width;
+    in property<length> contents-width;
+    in property<string> name;
+    in property<bool> required;
+    out property<bool> valid: validate();
+
+    pure callback validate() -> bool;
+    validate() => {
+        return true;
+    }
+
+    Text {
+        x: 0;
+        y: 0;
+        text: name + (required ? "*" : "");
+        width: label-width;
+        height: parent.height;
+        horizontal-alignment: left;
+        vertical-alignment: top;
+        states [
+            valid when !root.valid: {
+                color: red;
+            }
+        ]
+    }
+
+    Rectangle {
+        x: label-width + 1rem;
+        @children
+    }
+}
+
+
+export component AddDialog inherits Dialog {
+    in-out property<[string]> keywords;
+    
+    callback update-keywords(string);
+    callback remove-keyword(int, string);
+    callback clear-keywords();
+    
+    callback submit(out: Music, runtime: string);
+
+    pure callback validate-time(string) -> bool;
+
+    property<length> label-size: 5rem;
+    property<length> input-width: 20rem;
+    width: 27.5rem;
+    height: 25rem;
+    default-font-size: 18px;
+    title: "Add Music Entry";
+
+    Rectangle {
+        height: 21.7rem;
+        VerticalLayout {
+            
+            title-field := FormField {
+                name: "Title";
+                required: true;
+                label-width: label-size;
+                contents-width: input-width;
+                title := LineEdit {
+                    x: 0; y: 0;
+                    width: input-width;
+                }
+                validate() => {
+                    return !title.text.is-empty;
+                }
+            }
+            source-field := FormField {
+                name: "Source";
+                required: true;
+                label-width: label-size;
+                contents-width: input-width;
+                source := LineEdit {
+                    x: 0; y: 0;
+                    width: input-width;
+                }
+                validate() => {
+                    return !source.text.is-empty;
+                }
+            }
+            composer-field := FormField {
+                name: "Composer";
+                label-width: label-size;
+                contents-width: input-width;
+                composer := LineEdit {
+                    x: 0; y: 0;
+                    width: input-width;
+                }
+            }
+            arranger-field := FormField {
+                name: "Arranger";
+                label-width: label-size;
+                contents-width: input-width;
+                arranger := LineEdit {
+                    x: 0; y: 0;
+                    width: input-width;
+                }
+            }
+            notes-field := FormField {
+                name: "Notes";
+                label-width: label-size;
+                contents-width: input-width;
+                notes := TextEdit {
+                    x: 0; y: 0;
+                    width: input-width;
+                    height: 5rem;
+                }
+                min-height: 4rem;
+            }
+            runtime-field := FormField {
+                name: "Runtime";
+                label-width: label-size;
+                contents-width: input-width;
+                runtime := LineEdit {
+                    x: 0; y: 0;
+                    width: input-width;
+                }
+                validate() => {
+                    return validate-time(runtime.text) || runtime.text.is-empty;
+                }
+            }
+            keywords-field := FormField {
+                name: "Keywords";
+                label-width: label-size;
+                contents-width: input-width;
+                height: 3.5rem;
+
+                keyword := KeywordInput {
+                    x: 0; y: 0;
+                    width: input-width;
+                    selected() => {
+                        root.update-keywords(self.text);
+                    }
+                }
+
+                key-list := KeywordList {
+                    x: 0;
+                    y: keyword.height + 0.5rem;
+                    removable: true;
+                    clickable: false;
+
+                    words: root.keywords;
+                    remove(idx, word) => {
+                        remove-keyword(idx, word);
+                    }
+                }
+            }
+        }
+
+        error-box := ErrorPopup {
+            text-color: white;
+            background-color: #800;
+            center-x: root.width/2;
+            y: root.y + 1rem;
+        }
+    }
+    public function clear-form() {
+        title.text = "";
+        source.text = "";
+        composer.text = "";
+        arranger.text = "";
+        notes.text = "";
+        runtime.text = "";
+        keyword.clear();
+        clear-keywords();
+    }
+
+    pure function valid() -> bool {
+        return title-field.valid && 
+            source-field.valid && 
+            composer-field.valid && 
+            arranger-field.valid && 
+            notes-field.valid && 
+            runtime-field.valid && 
+            keywords-field.valid;
+    }
+
+    public function error(message: string) {
+        error-box.message = message;
+        error-box.show();
+    }
+
+
+    Button {
+        text: "Add";
+        dialog-button-role: accept;
+        clicked() => {
+            if !root.valid() {
+                if !title-field.valid {
+                    error("Title not specified");
+                } else if !source-field.valid {
+                    error("Source not specified");
+                } else if !runtime-field.valid {
+                    error("Runtime does not have a valid format");
+                } else {
+                    error("Something unexpected went wrong!");
+                }
+                return;
+            }
+            root.submit({
+                id: -1,
+                title: title.text,
+                source: source.text,
+                composer: composer.text,
+                arranger: arranger.text,
+                notes: notes.text,
+                runtime: -1,
+                keywords: root.keywords,
+            }, runtime.text);
+        }
+    }
+    StandardButton {kind: cancel;}
+}
+

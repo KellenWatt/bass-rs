@@ -1,0 +1,415 @@
+import { Button, ScrollView, TextEdit, LineEdit } from "std-widgets.slint";
+import { ExitButton, KeywordList } from "common.slint";
+import { Music } from "types.slint";
+import { KeywordInput } from "keyword-input.slint";
+
+
+export enum EditableInputState {
+    Display,
+    Edit,
+}
+component EditableInput inherits Rectangle {
+    // this is in-out to maybe be able to set it by clicking away in the future
+    in-out property<EditableInputState> current-state;
+    in-out property<string> text;
+    in-out property<length> font-size: 1rem;
+    in property<bool> multi-line: false;
+
+    callback update(string);
+
+    if current-state == EditableInputState.Display: Rectangle {
+        label := Text {
+            x: 0;
+            y: 0;
+            font-size: root.font-size;
+            horizontal-alignment: left;
+            text: root.text;
+            TouchArea {
+                double-clicked => {
+                    root.current-state = EditableInputState.Edit;
+                }
+            }
+        }
+
+        Text {
+            accessible-role: button;
+            x: label.width + (label.text.is-empty ? 0 : 0.5rem);
+            y: max(label.height, root.font-size) - (self.height + root.font-size * 0.1);
+            text: "edit";
+            color: #999;
+
+            font-size: 0.7rem;
+
+            TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    root.current-state = EditableInputState.Edit;
+                }
+            }
+        }
+    }
+
+    if current-state == EditableInputState.Edit && !multi-line: LineEdit {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        text: root.text;
+            font-size: root.font-size;
+        
+        accepted => {
+            root.text = self.text;
+            update(root.text);
+            root.current-state = EditableInputState.Display;
+        }
+        key-pressed(evt) => {
+            if evt.text == Key.Escape {
+                root.current-state = EditableInputState.Display;
+                return EventResult.accept;
+            }
+            return EventResult.reject;
+        }
+    }
+    if current-state == EditableInputState.Edit && multi-line: Rectangle {
+        background: green;
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        editor := TextEdit {
+            x: 0;
+            y: 0;
+            text: root.text;
+            width: parent.width;
+            height: parent.height - 2rem;
+
+            font-size: root.font-size;
+            
+            key-pressed(evt) => {
+                if evt.text == Key.Escape {
+                    root.current-state = EditableInputState.Display;
+                    return EventResult.accept;
+                }
+                if evt.modifiers.shift && evt.text == Key.Return {
+                    root.text = editor.text;
+                    update(root.text);
+                    root.current-state = EditableInputState.Display;
+                    return EventResult.accept;
+                }
+                return EventResult.reject;
+            }
+        }
+
+        Button {
+            x: 0;
+            y: editor.height;
+            width: parent.width;
+            height: 2rem;
+            text: "Done";
+
+            clicked => {
+                root.text = editor.text;
+                update(root.text);
+                root.current-state = EditableInputState.Display;
+            }
+        }
+    }
+}
+
+component EditableKeywordList inherits Rectangle {
+    in-out property<EditableInputState> current-state;
+    in property<length> font-size: 1rem;
+    in property<[string]> words;
+    
+    callback add(string);
+    callback keyword-clicked <=> keywords.keyword-clicked;
+    callback remove <=> keywords.remove;
+
+    if current-state == EditableInputState.Edit: Rectangle {
+        height: 2rem;
+        width: parent.width;
+        x: 0;
+        y: 0;
+
+        input := KeywordInput {
+            width: parent.width - done.width;
+            x: 0;
+            selected => {
+                root.add(self.text);
+            }
+
+            key-pressed(evt) => {
+                if evt.text == Key.Escape {
+                    root.current-state = EditableInputState.Display;
+                    return EventResult.accept;
+                }
+                return EventResult.reject;
+            }
+        }
+        // TODO add button to switch back to Display
+        done := Button {
+            text: "Done";
+            x: input.width + 0.3rem;
+            width: 4rem;
+
+            clicked => {
+                current-state = EditableInputState.Display;
+            }
+        }
+    }
+
+    if current-state == EditableInputState.Display: Rectangle {
+        Text {
+            accessible-role: button;
+            x: 0;
+            y: 0;
+            text: "edit";
+            color: #999;
+
+            font-size: 0.7rem;
+
+            TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    root.current-state = EditableInputState.Edit;
+                }
+            }
+        }
+    }
+
+
+    keywords := KeywordList {
+        y: current-state == EditableInputState.Edit ? 2rem : 1rem;
+        words: root.words;
+        removable: current-state == EditableInputState.Edit;
+    }
+}
+
+component LabeledField inherits Rectangle {
+    in property<string> title;
+    in property<length> font-size;
+    in property<length> content-width;
+    in property<length> content-height;
+    in property<TextHorizontalAlignment> title-horizontal-alignment: left;
+    in property<TextVerticalAlignment> title-vertical-alignment: center;
+    header := Text {
+        x: 0;
+        y: 0;
+        font-size: root.font-size;
+        font-weight: 700;
+        text: title;
+        horizontal-alignment: title-horizontal-alignment;
+        vertical-alignment: title-vertical-alignment;
+    }
+
+    width: content-width;
+    height: content-height + header.height;
+
+    Rectangle {
+        x: 0;
+        y: header.height + 0.25rem;
+        width: content-width;
+        height: content-height;
+        @children
+    }
+}
+
+export component DetailedView inherits Rectangle {
+    in-out property<Music> selection;
+    in-out property<length> display-height;
+    in property<length> max-display-height;
+    in property<length> min-display-height;
+
+    callback close();
+    callback update(Music);
+    callback remove-keyword(Music, int, string);
+    callback add-keyword(Music, string);
+    callback delete(Music);
+
+    function trigger-update() {
+        update(selection);
+    }
+
+    // background: lightblue;
+    height: min(max-display-height, max(display-height, min-display-height));
+
+    Rectangle {
+        y: -0.2rem - 2px;
+        height: 0.4rem + 5px;
+        VerticalLayout {
+
+            Rectangle {
+                height: 0.2rem;
+                width: sep.width;
+            }
+
+            sep := Rectangle {
+                // y: 0;
+                width: parent.width;
+                height: 2px;
+                border-width: 1px;
+                border-color: #555;
+                background: #444;
+
+            }
+            
+            Rectangle {
+                height: 0.2rem;
+                width: sep.width;
+            }
+            
+        }
+        TouchArea {
+            mouse-cursor: row-resize;
+            moved() => {
+                if (root.display-height - self.mouse-y > min-display-height) {
+                    root.display-height -= self.mouse-y;
+                }
+            }
+        }
+    }
+
+
+    property<length> display-padding: 2rem;
+    property<length> horizontal-padding: 3rem;
+    property<length> vertical-padding: 1rem;
+    ScrollView {
+        // viewport-width: 2*display-padding + composer.width + arranger.width + source.width;
+        viewport-width: 57rem;
+        viewport-height: 20rem;
+        title := EditableInput {
+            x: display-padding;
+            y: display-padding;
+            height: 1.8rem;
+            width: 20rem;
+            // wrap: word-wrap;
+            // horizontal-alignment: center;
+            font-size: 1.8rem;
+            text: selection.title;
+            update(text) => {
+                selection.title = text;
+                trigger-update();
+            }
+        }
+
+
+        composer := LabeledField {
+            x: display-padding;
+            y: display-padding + title.height + vertical-padding;
+            title: "Composed by";
+            // font-size: 1.1rem;
+            
+            content-width: 15rem;
+            content-height: 3rem;
+            EditableInput {
+                x: 0;
+                y: 0;
+                text: selection.composer;
+                update(text) => {
+                    selection.composer = text;
+                    trigger-update();
+                }
+            }
+        }
+
+        arranger := LabeledField {
+            x: display-padding + composer.width + horizontal-padding;
+            y: composer.y;
+            title: "Arranged by";
+
+            content-width: 15rem;
+            content-height: 3rem;
+            EditableInput {
+                x: 0;
+                y: 0;
+                text: selection.arranger;
+                // wrap: word-wrap;
+                update(text) => {
+                    selection.arranger = text;
+                    trigger-update();
+                }
+            }
+        }
+        
+        source := LabeledField {
+            x: arranger.x + arranger.width + horizontal-padding;
+            y: arranger.y;
+            title: "Source";
+
+            content-width: 15rem;
+            content-height: 3rem;
+            EditableInput {
+                x: 0;
+                y: 0;
+                text: selection.source;
+                update(text) => {
+                    selection.source = text;
+                    trigger-update();
+                }
+            }
+        }
+
+        notes := LabeledField {
+            x: display-padding;
+            y: composer.y + composer.height + vertical-padding;
+            title: "Notes";
+            content-width: 20rem;
+            content-height: 8rem;
+
+            EditableInput {
+                x: 0;
+                y: 0;
+                text: selection.notes;
+                multi-line: true;
+                update(text) => {
+                  selection.notes = text;
+                  trigger-update();
+                }
+            }
+        }
+
+        keywords := LabeledField {
+            x: notes.x + notes.width + horizontal-padding;
+            y: composer.y + composer.height + vertical-padding;
+            title: "Keywords";
+            content-width: 20rem;
+            content-height: 3rem;
+            
+            EditableKeywordList {
+                words: selection.keywords;
+
+                add(word) => {
+                    add-keyword(selection, word);
+                }
+
+                keyword-clicked(keyword) => {
+                    // TODO Search
+                }
+
+                remove(idx, keyword) => {
+                    remove-keyword(selection, idx, keyword);
+                }
+            }
+        }
+    }
+
+    ExitButton {
+        x: 0.7rem;
+        y: 0.7rem;
+        scale: 1.2;
+        clicked => {
+            close();
+        }
+    }
+
+    Button {
+        text: "Delete";
+        x: parent.width - (self.width + 0.7rem);
+        y: 0.7rem;
+
+        clicked => {
+            delete(root.selection);
+            close();
+        }
+    }
+
+}

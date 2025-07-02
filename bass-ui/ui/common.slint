@@ -1,0 +1,188 @@
+import {ScrollView} from "std-widgets.slint";
+
+export component ExitButton inherits Rectangle {
+    in property<float> scale: 1;
+    out property<length> size: 16px * scale;
+
+
+    border-radius: size / 2;
+    width: size;
+    height: size;
+    background: area.has-hover ? white.darker(10%) : white;
+    Path {
+        width: parent.width;
+        height: parent.height;
+        stroke: black;
+        stroke-width: 2px * scale;
+        
+        viewbox-width: 2;
+        viewbox-height: 2;
+        viewbox-x: -1;
+        viewbox-y: -1;
+
+        MoveTo {x: -0.707 + 0.067; y: -0.707 + 0.067;}
+        LineTo {x: 0.707 + 0.067; y: 0.707 + 0.067;}
+        MoveTo {x: -0.707 + 0.067; y: 0.707 + 0.067;}
+        LineTo {x: 0.707 + 0.067; y: -0.707 + 0.067;}
+    }
+    
+    callback clicked <=> area.clicked;
+    area := TouchArea {
+        mouse-cursor: pointer;
+    }
+}
+
+export component Keyword inherits Rectangle {
+    in property<length> font-size: 1rem;
+    in property<string> word;
+    in property<bool> clickable: true;
+    callback clicked;
+  
+    background: lightblue;
+    border-radius: 0.5 * self.height;
+    
+    main := Text {
+        x: 0.5rem;
+        color: black;
+        font-size: root.font-size;
+        vertical-alignment: center;
+        horizontal-alignment: left;
+        height: parent.height;
+        text: word;
+    }
+    area := TouchArea {
+        // mouse-cursor: pointer;
+        clicked => {
+            if clickable {
+                root.clicked();
+            }
+        }
+    }
+    animate background {
+        duration: 100ms;
+        easing: ease-in-out-sine;
+    }
+    states [
+        hovered when area.has-hover && clickable: {
+            background: lightblue.darker(10%);
+        }
+        unhovered when !area.has-hover && clickable: {
+            background: lightblue;
+        }
+    ]
+
+    in property<bool> removable: false;
+    callback remove(string);
+
+    if removable: ExitButton {
+        scale: 0.7;
+        x: root.width - (self.size + 0.5rem);
+        clicked => {
+            remove(word);
+        }
+    }
+
+    width: main.width + 1rem + (self.removable ? 11.2px + 0.3rem : 0px);
+}
+
+export component PaddedKeyword inherits Rectangle {
+    in property<length> font-size;
+    in property<string> word;
+    callback clicked <=> keyword.clicked;
+    in property<bool> removable: false;
+    in property<bool> clickable: true;
+    callback remove(string);
+    
+    keyword := Keyword {
+        word: root.word;
+        removable: root.removable;
+        clickable: root.clickable;
+        font-size: root.font-size;
+        remove(word) => {
+            root.remove(word);
+        }
+    }
+    width: keyword.width + 0.3rem;
+
+}
+
+export component KeywordList inherits Rectangle {
+    in property<[string]> words;
+    in property<bool> removable: false;
+    in property<bool> clickable: true;
+    in property<length> font-size: 1rem;
+
+    callback keyword-clicked(string);
+    callback remove(int, string);
+
+    clip: true;
+    HorizontalLayout {
+        for word[i] in words: PaddedKeyword {
+            word: word;
+            removable: root.removable;
+            clickable: root.clickable;
+            height: 1.3rem;
+            font-size: root.font-size;
+
+            clicked => {
+                keyword-clicked(word);
+            }
+            remove => {
+                root.remove(i, word);
+            }
+        }
+    }
+}
+
+
+export component ErrorPopup inherits Rectangle {
+    in property<string> message;
+    in property<brush> text-color;
+    in property<brush> background-color;
+    in property<length> center-x;
+    in property<length> center-y;
+    in property<duration> display-for: 3s;
+
+    x: center-x - self.width/2;
+    y: center-y - self.height/2;
+    
+    background: area.has-hover ? background-color.transparentize(0.3) : background-color;
+
+    visible: false;
+    public function show() {
+        self.visible = true;
+        timer.running = true;
+    }
+
+    public function hide() {
+        timer.running = false;
+        self.visible = false;
+    }
+    // animate visible {
+    //     duration: 500ms;
+    // }
+
+    timer := Timer {
+        interval: display-for;
+        running: false;
+
+        triggered => {
+            self.running = false;
+            root.visible = false;
+        }
+    }
+    area := TouchArea {
+        clicked => {
+            root.hide();
+        }
+    }
+
+    contents := Text {
+        color: area.has-hover ? root.text-color.transparentize(0.3) : root.text-color;
+        wrap: word-wrap;
+        text: message;
+    }
+    width: contents.width + 1rem;
+    height: contents.height + 0.5rem;
+    border-radius: 0.5rem;
+}

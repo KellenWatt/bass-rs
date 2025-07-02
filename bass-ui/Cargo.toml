@@ -1,0 +1,16 @@
+[package]
+name = "bass"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+libbass = { version = "0.1.0", path = "../bass-rs" }
+slint = "1.10.0"
+
+[build-dependencies]
+slint-build = "1.10.0"
+
+[[bin]]
+name="Bass"
+path="src/main.rs"
+
