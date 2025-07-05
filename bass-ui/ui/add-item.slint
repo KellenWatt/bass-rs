@@ -1,42 +1,7 @@
 import { Music } from "./types.slint";
 import { ListView, Button, StandardButton, LineEdit, TextEdit, ScrollView } from "std-widgets.slint";
-import { KeywordList, ErrorPopup } from "./common.slint";
+import { KeywordList, FormField, ErrorToast } from "./common.slint";
 import { KeywordInput } from "keyword-input.slint";
-
-
-component FormField inherits Rectangle {
-    in property<length> label-width;
-    in property<length> contents-width;
-    in property<string> name;
-    in property<bool> required;
-    out property<bool> valid: validate();
-
-    pure callback validate() -> bool;
-    validate() => {
-        return true;
-    }
-
-    Text {
-        x: 0;
-        y: 0;
-        text: name + (required ? "*" : "");
-        width: label-width;
-        height: parent.height;
-        horizontal-alignment: left;
-        vertical-alignment: top;
-        states [
-            valid when !root.valid: {
-                color: red;
-            }
-        ]
-    }
-
-    Rectangle {
-        x: label-width + 1rem;
-        @children
-    }
-}
-
 
 export component AddDialog inherits Dialog {
     in-out property<[string]> keywords;
@@ -51,8 +16,10 @@ export component AddDialog inherits Dialog {
 
     property<length> label-size: 5rem;
     property<length> input-width: 20rem;
-    width: 27.5rem;
-    height: 25rem;
+    min-width: 27.5rem;
+    min-height: 25rem;
+    preferred-width: 27.5rem;
+    preferred-height: 25rem;
     default-font-size: 18px;
     title: "Add Music Entry";
 
@@ -155,7 +122,7 @@ export component AddDialog inherits Dialog {
             }
         }
 
-        error-box := ErrorPopup {
+        error-box := ErrorToast {
             text-color: white;
             background-color: #800;
             center-x: root.width/2;

@@ -11,6 +11,7 @@ use std::time::{Instant, Duration};
 mod search;
 use libbass::db::{self, Music as DBMusic, Keyword};
 
+
 // Slint Type
 // export struct Music {
 //     id: int,
@@ -87,6 +88,8 @@ static WORD_PROVIDER: LazyLock<WordProvider> = LazyLock::new(|| {
     WordProvider::new(Duration::from_secs(5))
 });
 
+static CURRENT_SEARCH: RwLock<Option<UISearch>> = RwLock::new(None);
+
 fn music_from_ui(m: &Music) -> DBMusic {
     let mut dbm = DBMusic::new_with_id(m.id.into());
     dbm.title = m.title.clone().into();
@@ -117,13 +120,17 @@ fn main() -> Result<(), slint::PlatformError> {
     
     let main_window = Bass::new()?;
     let add_dialog = AddDialog::new()?;
+    let search_dialog = SearchDialog::new()?;
 
     main_window.global::<KeywordInputLogic>().on_words(words_by_hint);
     add_dialog.global::<KeywordInputLogic>().on_words(words_by_hint);
+    search_dialog.global::<KeywordInputLogic>().on_words(words_by_hint);
 
     add_dialog.on_validate_time(|t| {
         // This seems to work, but doing it as a global with identical code seems to not, for some
         // reason.
+        // This reason is that "globals" aren't technically global, and instead are essentially
+        // "instanced" per window.
         t.chars().all(|c| c.is_ascii_digit() || c == ':') && t.split(":").all(|s| {
             (s.len() == 1 || s.len() == 2) && s.parse::<u16>().unwrap() < 60
         })
@@ -134,9 +141,6 @@ fn main() -> Result<(), slint::PlatformError> {
         dialog.hide().unwrap();
     });
 
-    // add_dialog.on_matches_hint(move |option, hint| {
-    //     option == hint
-    // });
 
     let weak_add = add_dialog.as_weak();
     add_dialog.on_update_keywords(move |keyword| {
@@ -236,11 +240,50 @@ fn main() -> Result<(), slint::PlatformError> {
         }
     });
 
+    let weak_search = search_dialog.as_weak();
+    main_window.on_show_search_dialog(move || {
+        let dialog = weak_search.unwrap();
+        dialog.show().unwrap();
+
+        // TODO Implement dialog
+
+        // let search = Search::new(Field::Title, SearchOp::Contains, "a", true);
+        // let search = UISearch {
+        //     name: "TODO".into(),
+        //     search_text: search.to_string().into(),
+        // };
+        // *CURRENT_SEARCH.write().unwrap() = Some(search);
+        // main_window.invoke_trigger_refresh();
+    });
+
+    let weak_main = main_window.as_weak();
+    main_window.on_search(move |s| {
+        let main_window = weak_main.unwrap();
+        *CURRENT_SEARCH.write().unwrap() = Some(s);
+        main_window.invoke_trigger_refresh();
+    });
+
+    let weak_main = main_window.as_weak();
+    main_window.on_clear_search(move || {
+        let main_window = weak_main.unwrap();
+        *CURRENT_SEARCH.write().unwrap() = None;
+        main_window.invoke_trigger_refresh();
+    });
+
     let weak_main = main_window.as_weak();
     main_window.on_trigger_refresh(move || {
         let main_window = weak_main.unwrap();
 
-        let musics: Vec<DBMusic> = DBMusic::list_all().unwrap(); // TODO handle this better.
+        let musics = match *CURRENT_SEARCH.read().unwrap() {
+            Some(ref s) => {
+                let text = s.search_text.to_string();
+                let search: search::Search = text.parse().unwrap(); // TODO you know what
+                search.execute().unwrap() // TODO hey what do you know?
+            }
+            None => {
+                DBMusic::list_all().unwrap() // TODO handle this better.
+            }
+        };
         
         let music_list = musics.into_iter().map(|m| {
             let keywords = m.keywords().unwrap().unwrap(); // The first unwrap needs to be handled better
@@ -263,36 +306,7 @@ fn main() -> Result<(), slint::PlatformError> {
 
     main_window.invoke_trigger_refresh();
     
-    // main_window.on_update_selection(move |id| {
-    //     if id >= 0 {
-    //         // fetch from DB
-    //         // dummy for now
-    //         Music {
-    //             id: id,
-    //             title: "Selection".into(),
-    //             source: "Here".into(),
-    //             composer: "This Guy".into(),
-    //             arranger: "That Guy".into(),
-    //             notes: "Some written stuff".into(),
-    //             runtime: 60,
-    //             keywords: ["selection".into(), "this".into(), "is".into()].into(),
-    //         }
-    //     } else {
-    //         Music {
-    //             id: -1,
-    //             title: "hidden".into(),
-    //             source: "unknown".into(),
-    //             composer: "re██████".into(),
-    //             arranger: "Yellow prince".into(),
-    //             notes: "This should not be showing".into(),
-    //             runtime: -1,
-    //             keywords: [].into(),
-    //         }
-    //     }
-    // });
     main_window.run()?;
     // WORD_PROVIDER.stop();
     Ok(())
-    // main_window.show();
-    // slint::run_event_loop()
 }

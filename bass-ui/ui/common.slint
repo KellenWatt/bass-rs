@@ -32,6 +32,39 @@ export component ExitButton inherits Rectangle {
     }
 }
 
+export component FormField inherits Rectangle {
+    in property<length> label-width;
+    in property<length> contents-width;
+    in property<string> name;
+    in property<bool> required;
+    out property<bool> valid: validate();
+
+    pure callback validate() -> bool;
+    validate() => {
+        return true;
+    }
+
+    Text {
+        x: 0;
+        y: 0;
+        text: name + (required ? "*" : "");
+        width: label-width;
+        height: parent.height;
+        horizontal-alignment: left;
+        vertical-alignment: top;
+        states [
+            valid when !root.valid: {
+                color: red;
+            }
+        ]
+    }
+
+    Rectangle {
+        x: label-width + 1rem;
+        @children
+    }
+}
+
 export component Keyword inherits Rectangle {
     in property<length> font-size: 1rem;
     in property<string> word;
@@ -135,7 +168,7 @@ export component KeywordList inherits Rectangle {
 }
 
 
-export component ErrorPopup inherits Rectangle {
+export component ErrorToast inherits Rectangle {
     in property<string> message;
     in property<brush> text-color;
     in property<brush> background-color;
@@ -185,4 +218,35 @@ export component ErrorPopup inherits Rectangle {
     width: contents.width + 1rem;
     height: contents.height + 0.5rem;
     border-radius: 0.5rem;
+}
+
+export component PaddedRectangle inherits Rectangle{
+
+    in property<length> content-padding: 0px;
+    in property<length> content-padding-left: -1px;
+    in property<length> content-padding-right: -1px;
+    in property<length> content-padding-top: -1px;
+    in property<length> content-padding-bottom: -1px;
+
+    out property<length> vertical-padding: 
+        (content-padding-top >= 0 ? content-padding-top : content-padding) + 
+        (content-padding-bottom >= 0 ? content-padding-bottom : content-padding);
+    
+    out property<length> horizontal-padding: 
+        (content-padding-left >= 0 ? content-padding-left : content-padding) + 
+        (content-padding-right >= 0 ? content-padding-right : content-padding);
+
+
+    out property<length> content-width: self.width - horizontal-padding;
+    out property<length> content-height: self.height - vertical-padding;
+
+    Rectangle {
+        x: content-padding-left >= 0 ? content-padding-left : content-padding;
+        y: content-padding-top >= 0 ? content-padding-top: content-padding;
+        width: parent.width - horizontal-padding;
+        height: parent.height - vertical-padding;
+
+        @children
+    }
+
 }
