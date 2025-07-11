@@ -279,6 +279,7 @@ export component SearchBar inherits Rectangle {
                 border-radius: 5px;
                 Text {
                     text: "Clear Filter";
+                    color: #EEE;
                 }
         
                 TouchArea {
@@ -292,7 +293,7 @@ export component SearchBar inherits Rectangle {
             label := PaddedRectangle {
                 content-padding: 0.5rem;
                 height: content.height + self.vertical-padding;
-                background: #555;
+                background: #999;
                 y: 0;
                 content := Text {
                     x: 0;
@@ -302,6 +303,7 @@ export component SearchBar inherits Rectangle {
                     text: "Searches";
                     font-size: 1.2rem;
                     font-weight: 600;
+                    color: black;
                 }
             }
 

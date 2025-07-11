@@ -67,13 +67,6 @@ component MusicItem inherits Rectangle {
         easing: ease-in-out-sine;
     }
 
-    if insert-separator: Rectangle {
-        height: separator-size; 
-        width: parent.width;
-        x: 0;
-        y: 0;
-        background: #BBB;
-    }
 
     property<color> text-color: is-hovered ? #000 : #222;
     HorizontalLayout {
@@ -133,6 +126,13 @@ component MusicItem inherits Rectangle {
         }
         ItemSeparator {
         }
+    }
+    if insert-separator: Rectangle {
+        height: separator-size; 
+        width: parent.width;
+        x: 0;
+        y: root.height - separator-size;
+        background: #BBB;
     }
 }
 
@@ -261,7 +261,7 @@ component MusicList inherits ListView {
         composer-width <=> root.composer-width;
         arranger-width <=> root.arranger-width;
         keywords-width <=> root.keywords-width;
-        insert-separator: i > 0;
+        insert-separator: true;
     }
 
 }
