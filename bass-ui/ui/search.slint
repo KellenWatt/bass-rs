@@ -1,5 +1,5 @@
-import { PaddedRectangle, FormField, ErrorToast } from "common.slint";
-import { Button, ListView, StandardButton } from "std-widgets.slint";
+import { PaddedRectangle, FormField, ErrorToast, BusinessLogic, ExitButton } from "common.slint";
+import { Button, ListView, StandardButton, ComboBox, CheckBox, LineEdit } from "std-widgets.slint";
 import { KeywordInput } from "keyword-input.slint";
 
 export struct UISearch {
@@ -8,37 +8,234 @@ export struct UISearch {
 }
 
 export component SearchDialog inherits Dialog {
+    in property<length> _default-font-size: 18px;
     callback submit(out: UISearch);
 
-    property<length> label-size: 5rem;
+    property<length> label-size: 3rem;
     property<length> input-width: 20rem;
 
-    min-width: 27.5rem;
-    min-height: 20rem;
+    min-width: 20.5rem;
+    min-height: 10rem;
 
-    preferred-width: 27.5rem;
-    preferred-height: 20rem;
+    preferred-width: 20.5rem;
+    preferred-height: 10rem;
 
     default-font-size: 18px;
     title: "Music Search";
 
     Rectangle {
         height: parent.height - 3.3rem;
-        PaddedRectangle {
+        container := PaddedRectangle {
             content-padding: 1rem;
+
+            field-input := FormField {
+                x: 0; y: 0;
+                name: "Field";
+                label-width: label-size;
+                height: field.height;
+
+                field := ComboBox {
+                    x: 0; 
+                    y: field-input.y - (field-input.height - 1rem)/2;
+                    model: ["Title", "Source", "Composer", "Arranger", "Notes", "Runtime", "Keywords"];
+                           selected => {
+                               if self.current-value == "Runtime" {
+                                   op-input.current-value = "equals";
+                               } else if self.current-value == "Keywords" {
+                                   op-input.current-value = "has";
+                               } else {
+                                   op-input.current-value = "contains";
+                               }
+                           }
+                }
+            }
+            
+            not := CheckBox {
+                x: op-input.x - (self.width + 1rem);
+                y: op-input.y + (op-input.height - not.height)/2;
+                text: "Invert";
+            }
+
+            op-input := ComboBox {
+                x: label-size + 1rem;
+                y: field-input.y + field-input.height/2 + 1rem;
+                width: 8rem;
+                
+                model: (field.current-value == "Title" || 
+                        field.current-value == "Source" ||
+                        field.current-value == "Composer" ||
+                        field.current-value == "Arranger" || 
+                        field.current-value == "Notes"
+                        ) ? ["contains", "is"] : 
+                       (field.current-value == "Runtime" ? ["equals", "shorter than", "longer than"] :
+                        ["has"]
+                       );
+            }
+
+            
+            value-input := FormField {
+                x: 0; y: op-input.y + op-input.height + 0.5rem;
+                required: true;
+                name: "Value";
+                label-width: label-size;
+                height: key-input.height;
+
+                key-input := KeywordInput {
+                    disable-hints: field.current-value != "Keywords";
+                    clear-on-select: true;
+                    selected() => {
+                        self.set-text(self.text);
+                    }
+                }
+
+
+                validate => {
+                    if field.current-value == "Runtime" {
+                        return key-input.text.is-empty || BusinessLogic.validate-time(key-input.text);
+                    }
+                    return true;
+                }
+            }
+        }
+    }
+
+    public function clear() {
+        key-input.clear();
+    }
+
+    function op-string() -> string {
+        if field.current-value == "Runtime" {
+            if op-input.current-value == "equals" {
+                return "==";
+            } else if op-input.current-value == "shorter than" {
+                return "<";
+            } else {
+                return ">";
+            }
+        } else {
+            if op-input.current-value == "contains" {
+                return "in";
+            } else {
+                return "'=";
+            }
+        }
+    }
+
+    StandardButton {
+        kind: cancel;
+    }
+
+    Button {
+        text: "Search";
+        primary: true;
+        dialog-button-role: accept;
+
+        clicked => {
+            // debug({name: "", search-text: field.current-value.to-lowercase()+ " " + (not.checked ? "not" : "") + " " + op-input.current-value + " " + key-input.text});
+            submit({name: "", search-text: field.current-value.to-lowercase()+ " " + (not.checked ? "not" : "") + " " + op-string() + " " + key-input.text})
         }
     }
 }
 
+// component Star inherits Path {
+// 
+//     stroke: #EEE;
+//     // viewbox-width: 2;
+//     // viewbox-height: 2;
+//     // viewbox-x: -1;
+//     // viewbox-y: -1;
+//     commands: "m25,1 6,17h18l-14,11 5,17-15-10-15,10 5-17-14-11h18z";
+// }
+
 component SearchList inherits ListView {
     in property<[UISearch]> searches;
     callback trigger-search(UISearch);
+    callback remove(int);
 
-    for search in searches: Rectangle {
-        Text {
-            text: "TODO";
+    for search[i] in searches: TouchArea {
+        height: content.height;
+        clicked => {
+            trigger-search(search);
+        }
+        content := PaddedRectangle {
+            height: self.vertical-padding + label.height;
+            content-padding: 0.5rem;
+            content-padding-left: 1rem;
+            content-padding-right: 1rem;
+
+            background: parent.has-hover ? #687894 : transparent;
+            label := Text {
+                width: parent.content-width;
+                horizontal-alignment: left;
+                text: search.name;
+            }
+
+            // area := TouchArea {
+            //     clicked => {
+            //         trigger-search(search);
+            //     }
+            // }
+
+            exit := ExitButton {
+                scale: 0.75;
+                x: parent.content-width - self.width;
+                y: parent.content-height/2 - self.height/2;
+                clicked => {
+                    remove(i);
+                }
+            }
         }
     }
+}
+
+enum EditState {
+    Button,
+    Input,
+}
+
+component ButtonInput {
+    in property<string> text;
+    in property<bool> enabled;
+
+    changed enabled => {
+        if !self.enabled {
+            self.state = EditState.Button;
+        }
+    }
+
+    property<EditState> state: EditState.Button;
+
+    changed state => {
+        if state == EditState.Input {
+            edit.focus();
+        }
+    }
+    
+    callback accepted(string);
+
+    Button {
+        width: parent.width;
+        height: parent.height;
+        text: root.text;
+        enabled: root.enabled;
+        visible: root.state == EditState.Button;
+        clicked => {
+            root.state = EditState.Input;
+        }
+    }
+
+    edit := LineEdit {
+        width: parent.width;
+        height: parent.height;
+        visible: root.state == EditState.Input;
+        placeholder-text: "Search name";
+        accepted => {
+            root.state = EditState.Button;
+            root.accepted(self.text);
+            self.text = "";
+        }
+    }
+    
 }
 
 export component SearchBar inherits Rectangle {
@@ -46,19 +243,50 @@ export component SearchBar inherits Rectangle {
     in property<length> max-display-width;
     in-out property<bool> showing: true;
 
-    in property<[UISearch]> searches;
+    in property<bool> search-active;
+
+    in property<[UISearch]> searches: [];
 
     callback search-clicked <=> search.clicked;
     callback trigger-search <=> search-list.trigger-search;
     callback clear-search;
 
+    callback add-search(name: string);
+    callback remove-search <=> search-list.remove;
+
+    in property<length> clear-button-offset;
+
     width: showing ? min(max-display-width, max(display-width, 12rem)) : 0;
 
     VerticalLayout {
-        search := Button {
-            text: "Search";
-            width: parent.width;
-            height: 3rem;
+        PaddedRectangle {
+            content-padding: 0.5rem;
+            height: 4rem;
+            search := Button {
+                text: "Search";
+                width: parent.content-width;
+                height: parent.content-height;
+                visible: showing;
+            }
+        }
+        if search-active: PaddedRectangle {
+            content-padding: 0.5rem;
+            content-padding-top: 0rem;
+            height: 2rem;
+            visible: showing;
+            Rectangle {
+                background: #A00;
+                border-radius: 5px;
+                Text {
+                    text: "Clear Filter";
+                }
+        
+                TouchArea {
+                    clicked => {
+                        clear-search();
+                    }
+                }
+            }
         }
         Rectangle {
             label := PaddedRectangle {
@@ -71,19 +299,50 @@ export component SearchBar inherits Rectangle {
                     y: 0;
                     width: parent.content-width;
                     horizontal-alignment: center;
-                    text: "Saved Searches";
+                    text: "Searches";
                     font-size: 1.2rem;
                     font-weight: 600;
                 }
             }
-            search-list := SearchList {
+
+            save-button := PaddedRectangle {
                 x: 0;
                 y: label.height;
-                height: parent.height * 50%;
+                content-padding: 0.5rem;
+                height: 3rem;
+                ButtonInput {
+                    width: parent.content-width;
+                    height: parent.content-height;
+                    text: "Save";
+                    enabled: search-active;
+                    visible: showing;
+                    accepted(name) => {
+                        root.add-search(name);
+                    }
+                }
+            }
+            search-list := SearchList {
+                x: 0;
+                y: save-button.y + save-button.height;
+                // height: parent.height * 50%;
                 // background: pink;
                 searches: root.searches;
             }
         }
+        // save := PaddedRectangle {
+        //     content-padding: 0.5rem;
+        //     height: 3rem;
+        //     Button {
+        //         visible: showing;
+        //         width: parent.content-width;
+        //         enabled: search-active;
+        //         text: "Save Search";
+        // 
+        //         clicked => {
+        //             debug("saving current!");
+        //         }
+        //     }
+        // }
     }
     // Collapse toggle
     Rectangle {
@@ -116,8 +375,46 @@ export component SearchBar inherits Rectangle {
         }
     }
 
+    if search-active && !showing: Rectangle {
+        background: #A00;
+        x: 1rem;
+        y: root.height - self.height - 1rem - clear-button-offset;
+        height: 3rem;
+        width: 3rem;
+        border-radius: 5px;
+
+        Path {
+            viewbox-width: 2;
+            viewbox-height: 2;
+            viewbox-x: -1;
+            viewbox-y: -1;
+            stroke-width: 0.2rem;
+            stroke: #EEE;
+            MoveTo {x: 0.7; y: 0.7;}
+            LineTo {x: 0.2; y: 0.2;}
+            ArcTo  {x: -0.4; y: -0.4; radius-x: 0.3; radius-y: 0.3;}
+            ArcTo  {x: 0.2; y: 0.2; radius-x: 0.3; radius-y: 0.3;}
+            
+            // Central X
+            MoveTo {x: -0.3; y: -0.3;}
+            LineTo {x: 0.1; y: 0.1;}
+            MoveTo {x: -0.3; y: 0.1;}
+            LineTo {x: 0.1; y: -0.3;}
+
+            // // Line across lens
+            // MoveTo {x: 0.6; y: -0.8;}
+            // LineTo {x: -0.8; y: 0.6;}
+        }
+
+        TouchArea {
+            clicked => {
+                clear-search()
+            }
+        }
+    }
+
     // Right-side vertical draggable separator.
-    Rectangle {
+    if showing: Rectangle {
         x: root.width + -0.2rem - 2px;
         width: 0.4rem + 5px;
         HorizontalLayout {
@@ -146,7 +443,7 @@ export component SearchBar inherits Rectangle {
         TouchArea {
             mouse-cursor: col-resize;
             moved() => {
-                if (root.display-width + self.mouse-x > 12rem) {
+                if (root.display-width + self.mouse-x > 12rem && root.display-width + self.mouse-x <= root.max-display-width) {
                     root.display-width += self.mouse-x;
                 }
             }

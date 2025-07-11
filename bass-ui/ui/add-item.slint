@@ -5,6 +5,7 @@ import { KeywordInput } from "keyword-input.slint";
 
 export component AddDialog inherits Dialog {
     in-out property<[string]> keywords;
+    in property<length> _default-font-size: 18px;
     
     callback update-keywords(string);
     callback remove-keyword(int, string);
@@ -20,7 +21,7 @@ export component AddDialog inherits Dialog {
     min-height: 25rem;
     preferred-width: 27.5rem;
     preferred-height: 25rem;
-    default-font-size: 18px;
+    default-font-size: _default-font-size;
     title: "Add Music Entry";
 
     Rectangle {
@@ -31,7 +32,7 @@ export component AddDialog inherits Dialog {
                 name: "Title";
                 required: true;
                 label-width: label-size;
-                contents-width: input-width;
+                // contents-width: input-width;
                 title := LineEdit {
                     x: 0; y: 0;
                     width: input-width;
@@ -44,7 +45,7 @@ export component AddDialog inherits Dialog {
                 name: "Source";
                 required: true;
                 label-width: label-size;
-                contents-width: input-width;
+                // contents-width: input-width;
                 source := LineEdit {
                     x: 0; y: 0;
                     width: input-width;
@@ -56,7 +57,7 @@ export component AddDialog inherits Dialog {
             composer-field := FormField {
                 name: "Composer";
                 label-width: label-size;
-                contents-width: input-width;
+                // contents-width: input-width;
                 composer := LineEdit {
                     x: 0; y: 0;
                     width: input-width;
@@ -65,7 +66,7 @@ export component AddDialog inherits Dialog {
             arranger-field := FormField {
                 name: "Arranger";
                 label-width: label-size;
-                contents-width: input-width;
+                // contents-width: input-width;
                 arranger := LineEdit {
                     x: 0; y: 0;
                     width: input-width;
@@ -74,7 +75,7 @@ export component AddDialog inherits Dialog {
             notes-field := FormField {
                 name: "Notes";
                 label-width: label-size;
-                contents-width: input-width;
+                // contents-width: input-width;
                 notes := TextEdit {
                     x: 0; y: 0;
                     width: input-width;
@@ -85,7 +86,7 @@ export component AddDialog inherits Dialog {
             runtime-field := FormField {
                 name: "Runtime";
                 label-width: label-size;
-                contents-width: input-width;
+                // contents-width: input-width;
                 runtime := LineEdit {
                     x: 0; y: 0;
                     width: input-width;
@@ -97,7 +98,7 @@ export component AddDialog inherits Dialog {
             keywords-field := FormField {
                 name: "Keywords";
                 label-width: label-size;
-                contents-width: input-width;
+                // contents-width: input-width;
                 height: 3.5rem;
 
                 keyword := KeywordInput {
@@ -158,6 +159,7 @@ export component AddDialog inherits Dialog {
 
     Button {
         text: "Add";
+        primary: true;
         dialog-button-role: accept;
         clicked() => {
             if !root.valid() {

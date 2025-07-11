@@ -12,6 +12,7 @@ pub enum SearchOp {
     Gt,
     Ge, // assume it's a number
     Contains, // assume it's a string
+    Has, // keywords only
 }
 
 impl Display for SearchOp {
@@ -24,6 +25,7 @@ impl Display for SearchOp {
             SearchOp::Gt => ">",
             SearchOp::Ge => ">=",
             SearchOp::Contains => "in",
+            SearchOp::Has => "has",
         })
     }
 }
@@ -39,6 +41,7 @@ impl std::str::FromStr for SearchOp {
             ">"  => Ok(SearchOp::Gt),
             ">=" => Ok(SearchOp::Ge),
             "in" => Ok(SearchOp::Contains),
+            "has" => Ok(SearchOp::Has),
             _ => Err("Not a valid search operation"),
         }
     }
@@ -64,7 +67,7 @@ impl Display for Field {
             Field::Arranger => "arranger",
             Field::Notes => "notes",
             Field::Runtime => "runtime",
-            Field::Keyword => "keyword",
+            Field::Keyword => "keywords",
         })
     }
 }
@@ -80,7 +83,7 @@ impl std::str::FromStr for Field {
             "arranger" => Ok(Field::Arranger),
             "notes" => Ok(Field::Notes),
             "runtime" => Ok(Field::Runtime),
-            "keyword" => Ok(Field::Keyword),
+            "keywords" => Ok(Field::Keyword),
             _ => Err("Not a valid field"),
         }
     }
@@ -94,6 +97,9 @@ pub enum SearchType {
 impl SearchType {
     pub fn from_time(s: &str) -> Result<SearchType, &'static str> {
         let mut time: u16 = 0;
+        if s.len() == 0 {
+            return Ok(SearchType::Num(0));
+        }
         for (i, t) in s.rsplitn(2, ":").enumerate() {
             let t: u16 = t.parse().map_err(|_| "not an integer in time")?;
             time += t* 60u16.pow(i as u32);
@@ -182,7 +188,7 @@ impl Search {
             (Field::Runtime, SearchOp::Le, true) => query.runtime_gt(self.right.as_num()),
             (Field::Runtime, SearchOp::Ge, false) => query.runtime_ge(self.right.as_num()),
             (Field::Runtime, SearchOp::Ge, true) => query.runtime_lt(self.right.as_num()),
-            (f, o, i) => panic!("Not a valid query combination (field: {}, op: {}, inverte: {})", f, o, i),
+            (f, o, i) => panic!("Not a valid query combination (field: {}, op: {}, inverted: {})", f, o, i),
         };
         query.run()
     }

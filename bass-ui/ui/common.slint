@@ -1,5 +1,9 @@
 import {ScrollView} from "std-widgets.slint";
 
+export global BusinessLogic {
+    pure callback validate-time(string) -> bool;
+}
+
 export component ExitButton inherits Rectangle {
     in property<float> scale: 1;
     out property<length> size: 16px * scale;
@@ -34,7 +38,6 @@ export component ExitButton inherits Rectangle {
 
 export component FormField inherits Rectangle {
     in property<length> label-width;
-    in property<length> contents-width;
     in property<string> name;
     in property<bool> required;
     out property<bool> valid: validate();
@@ -61,6 +64,7 @@ export component FormField inherits Rectangle {
 
     Rectangle {
         x: label-width + 1rem;
+        width: parent.width - label-width - 1rem;
         @children
     }
 }

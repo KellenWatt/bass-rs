@@ -2,14 +2,20 @@
 slint::include_modules!();
 use slint::Model;
 
+use log::*;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+
 use std::rc::Rc;
 use std::sync::{LazyLock, RwLock, Arc};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{JoinHandle, self};
 use std::time::{Instant, Duration};
 
-mod search;
 use libbass::db::{self, Music as DBMusic, Keyword};
+mod search;
+mod config;
+use config::Config;
 
 
 // Slint Type
@@ -105,7 +111,6 @@ fn music_from_ui(m: &Music) -> DBMusic {
 }
 
 fn words_by_hint(hint: slint::SharedString) -> slint::ModelRc<slint::SharedString> {
-    // println!("words called");
     let hint = hint.to_string();
     let words = WORD_PROVIDER.words();
     let keys: Vec<slint::SharedString> = words.into_iter().filter_map(|k| {
@@ -115,8 +120,98 @@ fn words_by_hint(hint: slint::SharedString) -> slint::ModelRc<slint::SharedStrin
     Rc::new(slint::VecModel::from(keys)).into()
 }
 
+macro_rules! attempt {
+    ($t:expr) => {
+        match $t {
+            Ok(s) => s,
+            Err(e) => {
+                error!("{}", e);
+                std::process::exit(1);
+            }
+        }
+    };
+    ($msg:expr, $t:expr) => {
+        match $t {
+            Ok(s) => s,
+            Err(e) => {
+                error!("{} {}", $msg, e);
+                std::process::exit(1);
+            }
+        }
+    }
+}
+
+macro_rules! assume {
+    ($t:expr) => {
+        match $t {
+            Some(s) => s,
+            None => {
+                error!("Assumption didn't hold at {}", line!());
+                std::process::exit(1);
+            }
+        }
+    };
+    ($msg:expr, $t:expr) => {
+        match $t {
+            Some(s) => s,
+            None => {
+                error!("{}", $msg);
+                std::process::exit(1);
+            }
+        }
+    }
+}
+
+fn validate_time(t: slint::SharedString) -> bool {
+    let mut has_colon = false;
+    t.chars().all(|c| {
+        if c == ':' {
+            has_colon = true;
+        }
+        c.is_ascii_digit()
+    }) || (has_colon && t.split(":").all(|s| {
+        (s.len() == 1 || s.len() == 2) && s.parse::<u16>().unwrap() < 60
+    }))
+}
+
+#[allow(dead_code)]
+fn find_dbs<P: AsRef<Path>>(file: P) -> std::io::Result<Vec<PathBuf>> {
+    Ok(std::fs::read_dir(file)?.filter_map(|entry| {
+        Some(entry.ok()?.path())
+    }).collect())
+}
+
 fn main() -> Result<(), slint::PlatformError> {
-    db::init(Some("db.sqlite3")).unwrap();
+
+    let Some(home) = std::env::home_dir() else {
+        panic!("Program not being run as as a user");
+    };
+
+    let file_root = home
+                    .join("Library")
+                    .join("Application Support")
+                    .join("Bass");
+    if !file_root.is_dir() {
+        std::fs::create_dir(&file_root).unwrap();
+    }
+    let config = Config::load(&file_root);
+    let config = Arc::new(RwLock::new(config));
+    
+    simplelog::WriteLogger::init(
+        simplelog::LevelFilter::Trace, 
+        simplelog::Config::default(), 
+        std::fs::File::create(file_root.join("log.txt")).unwrap()).unwrap();
+
+    let database_files = file_root.join("dbs");
+    if !database_files.is_dir() {
+        attempt!(std::fs::create_dir(&database_files));
+    }
+
+    let last_db = attempt!(config.read()).last_db.clone().unwrap_or("collection.sqlite3".into());
+    // TODO maybe someday. Allow for multiple different dbs.
+
+    attempt!(db::init(Some(database_files.join(&last_db))));
+    attempt!(config.write()).last_db = Some("collection.sqlite3".into());
     
     let main_window = Bass::new()?;
     let add_dialog = AddDialog::new()?;
@@ -125,20 +220,14 @@ fn main() -> Result<(), slint::PlatformError> {
     main_window.global::<KeywordInputLogic>().on_words(words_by_hint);
     add_dialog.global::<KeywordInputLogic>().on_words(words_by_hint);
     search_dialog.global::<KeywordInputLogic>().on_words(words_by_hint);
+    search_dialog.global::<BusinessLogic>().on_validate_time(validate_time);
 
-    add_dialog.on_validate_time(|t| {
-        // This seems to work, but doing it as a global with identical code seems to not, for some
-        // reason.
-        // This reason is that "globals" aren't technically global, and instead are essentially
-        // "instanced" per window.
-        t.chars().all(|c| c.is_ascii_digit() || c == ':') && t.split(":").all(|s| {
-            (s.len() == 1 || s.len() == 2) && s.parse::<u16>().unwrap() < 60
-        })
-    });
+    add_dialog.on_validate_time(validate_time);
     let weak_add = add_dialog.as_weak();
     add_dialog.on_cancel_clicked(move || {
         let dialog = weak_add.unwrap();
-        dialog.hide().unwrap();
+        attempt!(dialog.hide());
+        dialog.invoke_clear_form();
     });
 
 
@@ -191,34 +280,46 @@ fn main() -> Result<(), slint::PlatformError> {
             music.runtime = Some(runtime);
         }
         let mut keywords: Vec<Keyword> = out.keywords.iter().map(|k| k.parse().unwrap()).collect();
-        music.insert_with_keywords(&mut keywords).unwrap();
+        attempt!(music.insert_with_keywords(&mut keywords));
         main_window.invoke_trigger_refresh();
         let _ = dialog.hide();
+        dialog.invoke_clear_form();
     });
 
+    let weak_search = search_dialog.as_weak();
+    search_dialog.on_cancel_clicked(move || {
+        let dialog = weak_search.unwrap();
+        attempt!(dialog.hide());
+    });
+
+    let weak_main = main_window.as_weak();
+    let weak_search = search_dialog.as_weak();
+    search_dialog.on_submit(move |s| {
+        let main_window = weak_main.unwrap();
+        let search_dialog = weak_search.unwrap();
+        main_window.invoke_search(s);
+        attempt!(search_dialog.hide());
+    });
     
-    // let model = Rc::new(slint::VecModel::from_iter(music_list));
-    // main_window.set_music_list(model.into());
 
     let weak_add = add_dialog.as_weak();
     main_window.on_show_add_dialog(move || {
         let dialog = weak_add.unwrap();
-        dialog.invoke_clear_form();
-        dialog.show().unwrap();
+        attempt!(dialog.show());
     });
 
     main_window.on_update_entry(move |m| {
         let mut music = music_from_ui(&m);
         let mut keywords: Vec<Keyword> = m.keywords.iter().map(|k| k.parse().unwrap()).collect();
 
-        let _ = music.update_keywords(&mut keywords); // TODO Error handling
+        let _ = music.update_keywords(&mut keywords);
         let _ = music.insert();
     });
 
     main_window.on_remove_keyword(move |m, idx, key| {
         let mut music = music_from_ui(&m);
         let mut key = key.parse().unwrap();
-        let _ = music.remove_keyword(&mut key).unwrap(); // TODO Error handling
+        let _ = attempt!(music.remove_keyword(&mut key));
 
         let keys = m.keywords.as_any().downcast_ref::<slint::VecModel<slint::SharedString>>().unwrap();
         keys.remove(idx as usize);
@@ -226,14 +327,14 @@ fn main() -> Result<(), slint::PlatformError> {
 
     main_window.on_remove_entry(move |m| {
         let music = music_from_ui(&m);
-        let _ = music.delete(); // TODO Error handling
+        let _ = attempt!(music.delete());
     });
 
     main_window.on_add_keyword(move |m, k| {
         let mut music = music_from_ui(&m);
         let mut key = k.parse().unwrap();
-        if !music.keywords().unwrap().unwrap().contains(&key) {
-            let _ = music.add_keyword(&mut key).unwrap(); // TODO Error handling;
+        if !assume!(attempt!(music.keywords())).contains(&key) {
+            let _ = attempt!(music.add_keyword(&mut key));
 
             let keys = m.keywords.as_any().downcast_ref::<slint::VecModel<slint::SharedString>>().unwrap();
             keys.push(k);
@@ -243,30 +344,23 @@ fn main() -> Result<(), slint::PlatformError> {
     let weak_search = search_dialog.as_weak();
     main_window.on_show_search_dialog(move || {
         let dialog = weak_search.unwrap();
-        dialog.show().unwrap();
-
-        // TODO Implement dialog
-
-        // let search = Search::new(Field::Title, SearchOp::Contains, "a", true);
-        // let search = UISearch {
-        //     name: "TODO".into(),
-        //     search_text: search.to_string().into(),
-        // };
-        // *CURRENT_SEARCH.write().unwrap() = Some(search);
-        // main_window.invoke_trigger_refresh();
+        dialog.invoke_clear();
+        attempt!(dialog.show());
     });
 
     let weak_main = main_window.as_weak();
     main_window.on_search(move |s| {
         let main_window = weak_main.unwrap();
-        *CURRENT_SEARCH.write().unwrap() = Some(s);
+        *attempt!(CURRENT_SEARCH.write()) = Some(s);
+        main_window.set_results_filtered(true);
         main_window.invoke_trigger_refresh();
     });
 
     let weak_main = main_window.as_weak();
     main_window.on_clear_search(move || {
         let main_window = weak_main.unwrap();
-        *CURRENT_SEARCH.write().unwrap() = None;
+        *attempt!(CURRENT_SEARCH.write()) = None;
+        main_window.set_results_filtered(false);
         main_window.invoke_trigger_refresh();
     });
 
@@ -274,23 +368,23 @@ fn main() -> Result<(), slint::PlatformError> {
     main_window.on_trigger_refresh(move || {
         let main_window = weak_main.unwrap();
 
-        let musics = match *CURRENT_SEARCH.read().unwrap() {
+        let musics = match *attempt!(CURRENT_SEARCH.read()) {
             Some(ref s) => {
                 let text = s.search_text.to_string();
-                let search: search::Search = text.parse().unwrap(); // TODO you know what
-                search.execute().unwrap() // TODO hey what do you know?
+                let search: search::Search = attempt!(text.parse());
+                attempt!(search.execute())
             }
             None => {
-                DBMusic::list_all().unwrap() // TODO handle this better.
+                attempt!(DBMusic::list_all())
             }
         };
         
         let music_list = musics.into_iter().map(|m| {
-            let keywords = m.keywords().unwrap().unwrap(); // The first unwrap needs to be handled better
+            let keywords = assume!(attempt!(m.keywords()));
             let keywords: Vec<slint::SharedString> = keywords.into_iter().map(|k| k.to_string().into()).collect();
             let keymodel = Rc::new(slint::VecModel::from(keywords));
             Music {
-                id: m.id().unwrap().into(),
+                id: assume!(m.id()).into(),
                 title: m.title.into(),
                 source: m.source.into(),
                 composer: m.composer.unwrap_or("".into()).into(),
@@ -304,9 +398,118 @@ fn main() -> Result<(), slint::PlatformError> {
         main_window.set_music_list(model.into());
     });
 
+    let weak_main = main_window.as_weak();
+    let tmp_file_root = file_root.clone();
+    main_window.on_add_search(move |name| {
+        // We'll assume that this is never called without there being an existing search
+        let mut search = assume!((*attempt!(CURRENT_SEARCH.read())).clone());
+        search.name = name;
+        
+        let main_window = weak_main.unwrap();
+        let searches = main_window.get_saved_searches();
+        let searches = searches.as_any().downcast_ref::<slint::VecModel<UISearch>>().unwrap();
+        searches.push(search);
+
+        let tmp_search_file = tmp_file_root.join("tmp_searches.txt");
+        let mut f = attempt!(std::fs::File::create(&tmp_search_file));
+        for s in searches.iter() {
+            attempt!(write!(f, "{}: {}", s.name, s.search_text));
+        }
+        drop(f);
+        let search_file = tmp_file_root.join("searches.txt");
+        attempt!(std::fs::rename(tmp_search_file, search_file));
+    });
+
+    let weak_main = main_window.as_weak();
+    let tmp_file_root = file_root.clone();
+    main_window.on_remove_search(move |i| {
+        let main_window = weak_main.unwrap();
+        let searches = main_window.get_saved_searches();
+        let searches = searches.as_any().downcast_ref::<slint::VecModel<UISearch>>().unwrap();
+
+        searches.remove(i as usize);
+        
+        let tmp_search_file = tmp_file_root.join("tmp_searches.txt");
+        let mut f = attempt!(std::fs::File::create(&tmp_search_file));
+        for s in searches.iter() {
+            attempt!(write!(f, "{}: {}", s.name, s.search_text));
+        }
+        drop(f);
+        let search_file = tmp_file_root.join("searches.txt");
+        std::fs::rename(tmp_search_file, search_file).unwrap();
+    });
+
+    let weak_main = main_window.as_weak();
+    let tmp_file_root = file_root.clone();
+    main_window.on_refresh_searches(move || {
+        let main_window = weak_main.unwrap();
+        let search_file = tmp_file_root.join("searches.txt");
+        if !search_file.exists() {
+            return
+        }
+        let searches = attempt!(std::fs::read_to_string(search_file));
+
+        let searches = searches.lines().map(|l| {
+            let (name, search) = assume!(l.split_once(": "));
+            UISearch {
+                name: name.into(),
+                search_text: search.into(),
+            }
+        });
+        main_window.set_saved_searches(Rc::new(slint::VecModel::from_iter(searches)).into());
+    });
+
+    let weak_main = main_window.as_weak();
+    let weak_add = add_dialog.as_weak();
+    let weak_search = search_dialog.as_weak();
+    let dup_config = config.clone();
+    main_window.on_update_default_font_size(move |action| {
+        let main_window = weak_main.unwrap();
+        let add_dialog = weak_add.unwrap();
+        let search_dialog = weak_search.unwrap();
+        match action {
+            FontSizeAction::Default => {
+                let default_size = attempt!(dup_config.read()).ui.default_font_size;
+                main_window.set__default_font_size(default_size);
+                add_dialog.set__default_font_size(default_size + 2.0);
+                search_dialog.set__default_font_size(default_size + 2.0);
+            }
+            FontSizeAction::Increase => {
+                main_window.set__default_font_size(main_window.get__default_font_size() + 2.0);
+                add_dialog.set__default_font_size(add_dialog.get__default_font_size() + 2.0);
+                search_dialog.set__default_font_size(search_dialog.get__default_font_size() + 2.0);
+                attempt!(dup_config.write()).ui.default_font_size = main_window.get__default_font_size();
+            }
+            FontSizeAction::Decrease => {
+                main_window.set__default_font_size(main_window.get__default_font_size() - 2.0);
+                add_dialog.set__default_font_size(add_dialog.get__default_font_size() - 2.0);
+                search_dialog.set__default_font_size(search_dialog.get__default_font_size() - 2.0);
+                attempt!(dup_config.write()).ui.default_font_size = main_window.get__default_font_size();
+            }
+        }
+    });
+   
+    let weak_main = main_window.as_weak();
+    let tmp_file_root = database_files.clone();
+    main_window.on_export_db(move || {
+        let main_window = weak_main.unwrap();
+        let file_name = rfd::FileDialog::new()
+            .set_directory("~")
+            .set_file_name("bass.sqlite3")
+            .set_parent(&main_window.window().window_handle())
+            .set_can_create_directories(true)
+            .save_file();
+        if let Some(file_name) = file_name {
+            attempt!(std::fs::copy(tmp_file_root.join("collection.sqlite3"), file_name));
+        }
+    });
+
     main_window.invoke_trigger_refresh();
+    main_window.invoke_refresh_searches();
+    main_window.invoke_update_default_font_size(FontSizeAction::Default);
     
     main_window.run()?;
+    attempt!(attempt!(config.read()).save(&file_root));
     // WORD_PROVIDER.stop();
     Ok(())
 }

@@ -1,16 +1,17 @@
 [package]
 name = "bass"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 
 [dependencies]
 libbass = { version = "0.1.0", path = "../bass-rs" }
-slint = "1.10.0"
+log = "0.4.27"
+rfd = "0.15.3"
+serde = { version = "1.0.219", features = ["derive"] }
+simplelog = "0.12.2"
+slint = { version = "1.10.0", features = ["raw-window-handle-06"] }
+toml = "0.9.1"
 
 [build-dependencies]
 slint-build = "1.10.0"
-
-[[bin]]
-name="Bass"
-path="src/main.rs"
 

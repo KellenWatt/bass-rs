@@ -17,7 +17,18 @@ component EditableInput inherits Rectangle {
 
     callback update(string);
 
-    if current-state == EditableInputState.Display: Rectangle {
+    changed current-state => {
+        if current-state == EditableInputState.Edit {
+            if multi-line {
+                editor.focus()
+            } else {
+                line-edit.focus()
+            }
+        }
+    }
+
+    Rectangle {
+        visible: current-state == EditableInputState.Display;
         label := Text {
             x: 0;
             y: 0;
@@ -49,7 +60,8 @@ component EditableInput inherits Rectangle {
         }
     }
 
-    if current-state == EditableInputState.Edit && !multi-line: LineEdit {
+    line-edit := LineEdit {
+        visible: current-state == EditableInputState.Edit && !multi-line;
         x: 0;
         y: 0;
         width: parent.width;
@@ -69,7 +81,8 @@ component EditableInput inherits Rectangle {
             return EventResult.reject;
         }
     }
-    if current-state == EditableInputState.Edit && multi-line: Rectangle {
+    Rectangle {
+        visible: current-state == EditableInputState.Edit && multi-line;
         background: green;
         x: 0;
         y: 0;
@@ -121,10 +134,17 @@ component EditableKeywordList inherits Rectangle {
     in property<[string]> words;
     
     callback add(string);
-    callback keyword-clicked <=> keywords.keyword-clicked;
+    callback keyword-clicked(string);
     callback remove <=> keywords.remove;
 
-    if current-state == EditableInputState.Edit: Rectangle {
+    changed current-state => {
+        if current-state == EditableInputState.Edit {
+            input.set-focus();
+        }
+    }
+
+    Rectangle {
+        visible: current-state == EditableInputState.Edit;
         height: 2rem;
         width: parent.width;
         x: 0;
@@ -157,7 +177,8 @@ component EditableKeywordList inherits Rectangle {
         }
     }
 
-    if current-state == EditableInputState.Display: Rectangle {
+    Rectangle {
+        visible: current-state == EditableInputState.Display;
         Text {
             accessible-role: button;
             x: 0;
@@ -181,6 +202,11 @@ component EditableKeywordList inherits Rectangle {
         y: current-state == EditableInputState.Edit ? 2rem : 1rem;
         words: root.words;
         removable: current-state == EditableInputState.Edit;
+        keyword-clicked(s) => {
+            if !self.removable {
+                root.keyword-clicked(s);
+            }
+        }
     }
 }
 
@@ -225,6 +251,8 @@ export component DetailedView inherits Rectangle {
     callback add-keyword(Music, string);
     callback delete(Music);
 
+    callback keyword-clicked(string);
+
     function trigger-update() {
         update(selection);
     }
@@ -261,7 +289,8 @@ export component DetailedView inherits Rectangle {
         TouchArea {
             mouse-cursor: row-resize;
             moved() => {
-                if (root.display-height - self.mouse-y > min-display-height) {
+                if (root.display-height - self.mouse-y > min-display-height &&
+                    root.display-height - self.mouse-y <= max-display-height) {
                     root.display-height -= self.mouse-y;
                 }
             }
@@ -382,7 +411,7 @@ export component DetailedView inherits Rectangle {
                 }
 
                 keyword-clicked(keyword) => {
-                    // TODO Search
+                    root.keyword-clicked(keyword);
                 }
 
                 remove(idx, keyword) => {

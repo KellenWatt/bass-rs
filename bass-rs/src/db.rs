@@ -1,3 +1,4 @@
+#![allow(static_mut_refs)]
 use std::sync::{OnceLock, Mutex};
 use std::convert::Infallible;
 use std::path::Path;
@@ -16,7 +17,7 @@ pub enum Error {
 }
 pub type Result<T> = std::result::Result<T, Error>;
 
-static DB: OnceLock<Mutex<Connection>> = OnceLock::new();
+static mut DB: OnceLock<Mutex<Connection>> = OnceLock::new();
 
 #[allow(dead_code)]
 pub fn init<P: AsRef<Path>>(path: Option<P>) -> Result<()> {
@@ -27,28 +28,46 @@ pub fn init<P: AsRef<Path>>(path: Option<P>) -> Result<()> {
     }?;
     let init_script = include_str!("bass-init.sql");
     conn.execute_batch(init_script)?;
-    DB.set(Mutex::new(conn)).map_err(|_| Error::AlreadyInit)
+    unsafe {
+        DB.set(Mutex::new(conn)).map_err(|_| Error::AlreadyInit)
+    }
+}
+
+#[allow(dead_code)]
+pub unsafe fn reinit<P: AsRef<Path>>(path: Option<P>) -> Result<()> {
+    let conn = if let Some(path) = path {
+        Connection::open(path)
+    } else {
+        Connection::open_in_memory()
+    }?;
+    let init_script = include_str!("bass-init.sql");
+    conn.execute_batch(init_script)?;
+    let _ = DB.take();
+    let _ = DB.set(Mutex::new(conn));
+    Ok(())
 }
 
 fn execute<P: rusqlite::Params>(stmt: &str, params: P) -> Result<usize> {
-    DB.get().ok_or(Error::NotConnected)?.lock().unwrap()
+    unsafe {DB.get().ok_or(Error::NotConnected)?.lock().unwrap()
         .execute(stmt, params)
-        .map_err(|e| e.into())
+        .map_err(|e| e.into())}
 }
 
 fn query_row<T, P, F>(query: &str, params: P, f: F) -> Result<Option<T>> 
 where P: rusqlite::Params,
       F: FnOnce(&Row<'_>) -> std::result::Result<T, rusqlite::Error> {
+    unsafe {
     DB.get().ok_or(Error::NotConnected)?.lock().unwrap()
         .query_row(query, params, f) 
         .optional()
         .map_err(|e| e.into())
+    }
 }
 
 fn query<T, P, F>(query: &str, params: P, f: F) -> Result<Vec<T>> 
 where P: rusqlite::Params,
       F: Fn(&Row<'_>) -> std::result::Result<T, rusqlite::Error> {
-    let db = DB.get().ok_or(Error::NotConnected)?.lock().unwrap();
+    let db = unsafe {DB.get().ok_or(Error::NotConnected)?.lock().unwrap()};
     let mut statement = db.prepare_cached(query)?;
     let mut rows = statement
         .query(params)
@@ -63,7 +82,7 @@ where P: rusqlite::Params,
 }
 
 fn exists<P: rusqlite::Params>(query: &str, params: P) -> Result<bool> {
-    let db = DB.get().ok_or(Error::NotConnected)?.lock().unwrap();
+    let db = unsafe {DB.get().ok_or(Error::NotConnected)?.lock().unwrap()};
     let mut statement = db.prepare_cached(query)?;
     statement.exists(params).map_err(|e| e.into())
 }
@@ -453,7 +472,7 @@ impl Music {
             return Ok(Vec::new());
         }
         let key_ids = Keyword::fetch_ids(keywords)?.into_iter().map(|id| id.to_string()).collect::<Vec<_>>().join(",");
-        query(&format!("SELECT m.id, m.title, m.composer, m.arranger, m.source, m.notes, m.runtime FROM music m
+        query(&format!("SELECT m.id, m.title, m.source, m.composer, m.arranger, m.notes, m.runtime FROM music m
                INNER JOIN music_keywords mk ON m.id == mk.mid
                WHERE mk.kid IN ({});", key_ids), (), |row| Ok(Music::from_row(row)))
     }

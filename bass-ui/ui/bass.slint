@@ -1,6 +1,6 @@
 import { ListView, Button, ScrollView } from "std-widgets.slint";
 import { Music } from "./types.slint";
-import { KeywordList, ExitButton} from "./common.slint";
+import { KeywordList, ExitButton, BusinessLogic } from "./common.slint";
 
 import { KeywordInput, KeywordInputLogic } from "keyword-input.slint";
 
@@ -10,7 +10,7 @@ import { DetailedView } from "detailed-view.slint";
 import { SearchBar, UISearch, SearchDialog } from "search.slint";
 
 export { AddDialog, SearchDialog }
-export { KeywordInputLogic }
+export { KeywordInputLogic, BusinessLogic }
 
 
 component ItemCell inherits Rectangle {
@@ -54,6 +54,7 @@ component MusicItem inherits Rectangle {
     in property<length> keywords-width;
 
     callback click-handler(int);
+    callback keyword-clicked <=> keywords.keyword-clicked;
 
     in property<bool> insert-separator;
     in property<length> separator-size: 1px;
@@ -87,12 +88,12 @@ component MusicItem inherits Rectangle {
             HorizontalLayout {
                 Rectangle {
                     // padding
-                    width: 0.2rem;
+                    width: 0.2rem + 3.5px;
                 }
 
                 ItemCell {
                     // This random 1px seems to correct spacing well enough. I don't know why.
-                    width: title-width + 1px;
+                    width: title-width;
                     height: parent.height;
                     text: music.title;
                     text-color: root.text-color;
@@ -125,7 +126,7 @@ component MusicItem inherits Rectangle {
                 }
             }
         }
-        KeywordList {
+        keywords := KeywordList {
             y: 0.2rem;
             width: keywords-width;
             words: music.keywords;
@@ -234,6 +235,8 @@ component MusicList inherits ListView {
     in-out property<length> arranger-width;
     in-out property<length> keywords-width;
 
+    callback keyword-clicked(string);
+
     horizontal-scrollbar-policy: always-off;
     // Disable horizontal scrolling
     scrolled() => {
@@ -245,6 +248,10 @@ component MusicList inherits ListView {
         selected: root.selected-item == i;
         click-handler(id) => {
             root.selected-item = i;
+        }
+
+        keyword-clicked(s) => {
+            root.keyword-clicked(s);
         }
 
         width: parent.width + 2px;
@@ -270,6 +277,7 @@ component MusicListContainer inherits Rectangle {
     in-out property<length> keywords-width: 15rem;
 
     callback show-add-dialog;
+    callback keyword-clicked <=> list.keyword-clicked;
 
     header := MusicListHeader {
         y: 0;
@@ -281,9 +289,11 @@ component MusicListContainer inherits Rectangle {
         keywords-width <=> root.keywords-width;
     }
 
+    
     list := MusicList {
-        y: header.height - 1px;
+        y: header.height - 2px;
         height: parent.height - header.height;
+        width: parent.width + 4px;
         music <=> root.music;
         title-width <=> root.title-width;
         source-width <=> root.source-width;
@@ -336,6 +346,11 @@ component MusicListContainer inherits Rectangle {
     }
 }
 
+export enum FontSizeAction {
+    Default,
+    Increase,
+    Decrease,
+}
 
 export component Bass inherits Window {
     // in-out property<int> selected-id <=> list.selected-id;
@@ -343,21 +358,24 @@ export component Bass inherits Window {
     in property<length> detailed-view-size: 15rem;
     in property<length> search-bar-size: 12rem;
     in property<[UISearch]> saved-searches <=> search-bar.searches;
+    in property<bool> results-filtered <=> search-bar.search-active;
+    in property<length> _default-font-size: 16px;
 
     min-width: 62rem;
     min-height: 25rem;
     preferred-height: 40rem;
 
-    default-font-size: 16px;
+    default-font-size: _default-font-size;
     title: "Bass Music Organizer";
     icon: @image-url("./images/bass-db-icon-small.png");
 
-    // This doesn't appear necessary anymore? Literally all of the data is contained in the model
-    // callback update-selection(int) -> Music;
 
     callback show-search-dialog <=> search-bar.search-clicked;
     callback search(UISearch);
     callback clear-search <=> search-bar.clear-search;
+    callback add-search <=> search-bar.add-search;
+    callback remove-search <=> search-bar.remove-search;
+    callback refresh-searches;
 
     callback show-add-dialog <=> list.show-add-dialog;
     callback trigger-refresh;
@@ -366,18 +384,27 @@ export component Bass inherits Window {
     callback remove-keyword(Music, int, string);
     callback add-keyword(Music, string);
 
+    callback export-db;
+    callback update-default-font-size(FontSizeAction);
+
     property<[string]> keys;
+    
+    public function clear-selection() {
+        list.selected-id = -1;
+    }
 
     in property<[Music]> music-list;
     HorizontalLayout {
 
         search-bar := SearchBar {
             display-width: search-bar-size;
-            max-display-width: 80% * root.width;
+            max-display-width: 50rem;
+
+            clear-button-offset: list.selected-id >= 0 ? detailed-view-size : 2rem;
 
             trigger-search(s) => {
+                clear-selection();
                 search(s);
-                trigger-refresh();
             }
         }
         
@@ -387,16 +414,25 @@ export component Bass inherits Window {
                 changed selected-id => {
                     root.selection = music-list[self.selected-id];
                 }
+
+                keyword-clicked(k) => {
+                    // self.selected-id = -1;
+                    clear-selection();
+                    search({
+                        name: "",
+                        search-text: "keywords  has " + k,
+                    });
+                }
             }
 
             if list.selected-id >= 0: DetailedView {
                 // Text {text: list.selected-id;}
                 selection: root.selection;
                 display-height: detailed-view-size;
-                max-display-height: 70% * root.height;
+                max-display-height: 40rem;
                 min-display-height: 15rem;
                 close => {
-                    list.selected-id = -1;
+                    clear-selection();
                 }
                 update(music) => {
                     update-entry(music);
@@ -414,6 +450,65 @@ export component Bass inherits Window {
                     remove-entry(music);
                     trigger-refresh();
                 }
+
+                keyword-clicked(keyword) => {
+                    search({
+                        name: "",
+                        search-text: "keywords  has " + keyword,
+                    });
+                }
+            }
+        }
+    }
+
+    MenuBar {
+        Menu {
+            title: "File";
+            MenuItem {
+                title: "Export Database...";
+                activated => {
+                    export-db();
+                }
+            }
+            MenuSeparator{}
+            MenuItem {
+                title: "New Entry...";
+                activated => {show-add-dialog()}
+            }
+            MenuItem {
+                title: "Delete Selected Entry";
+                enabled: list.selected-id != -1;
+                activated => {remove-entry(root.selection)}
+            }
+
+        }
+
+        Menu {
+            title: "View";
+
+            MenuItem {
+                title: "Search...";
+                activated => {show-search-dialog();}
+            }
+
+            // MenuItem {
+            //     title: "Save current search";
+            //     activated => {/* TODO at some point */}
+            // }
+
+            MenuSeparator{}
+
+            MenuItem {
+                title: "Default font size";
+                activated => {update-default-font-size(FontSizeAction.Default)}
+            }
+            MenuItem {
+                title: "Bigger";
+                activated => {update-default-font-size(FontSizeAction.Increase)}
+            }
+            MenuItem {
+                title: "Smaller";
+                activated => {update-default-font-size(FontSizeAction.Decrease)}
             }
         }
     }

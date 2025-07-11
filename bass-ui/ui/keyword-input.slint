@@ -11,13 +11,24 @@ export component KeywordInput inherits Rectangle {
     property<length> item-height: 1.5rem;
     out property<string> text: input.text;
 
+    in property<bool> disable-hints;
+    in property<bool> clear-on-select: true;
+
     property<[string]> words: KeywordInputLogic.words(input.text);
 
     callback selected();
     callback key-pressed <=> input.key-pressed;
     
+    public function set-focus() {
+        input.focus();
+    }
+    
     public function clear() {
         input.text = "";
+    }
+
+    public function set-text(s: string) {
+        input.text = s;
     }
 
     height: input.height;
@@ -27,12 +38,14 @@ export component KeywordInput inherits Rectangle {
         accepted => {
             root.text = self.text;
             selected();
-            self.text = "";
+            if clear-on-select {
+                self.text = "";
+            }
         }
     }
 
 
-    if !input.text.is-empty: VerticalLayout {
+    if !input.text.is-empty && !disable-hints: VerticalLayout {
         x: input.x;
         y: input.y - self.height;
         width: input.width;
@@ -52,7 +65,9 @@ export component KeywordInput inherits Rectangle {
             area := TouchArea {
                 clicked => {
                     root.text = word;
-                    input.text = "";
+                    if clear-on-select {
+                        input.text = "";
+                    }
                     selected();
                 }
             }
